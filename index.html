@@ -1,0 +1,1281 @@
+
+<html lang="en">
+<head>
+  <title>Bomb It</title>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="game.css">
+</head>
+<body style="margin: 0;">
+
+  <!--<script src="three.js-master/build/three.min.js"></script>-->
+  <script src="http://threejs.org/build/three.min.js"></script>
+
+  <script>
+
+    // Set up the scene, camera, and renderer as global variables.
+    var scene, camera, renderer;
+    var row = 17;
+    var col = 17;
+    var size = 30;
+    var neighbors=[];
+    var visited=[];
+    var bombs = [];
+    init();
+    var grid = initGrid();
+    var ItemEnum = {
+      HEALTH_PTS: "H",
+      BOMB_RANGE: "R",
+      NUM_BOMBS: "B",
+      SPEED: "S"
+    };
+    var startX = getRandomInt(1, row-2);  //start seeds for creating the maze
+    if(startX%2==0) startX+=1;
+    var startY = getRandomInt(1, col-2);
+    if(startY%2==0) startY+=1;
+    var maze = createMaze();
+    var players = initPlayers();
+    var startMaze = initMaze(maze);
+    var state = new State(players, startMaze);
+    var me = getPlayer(1, state.players);
+    var gameOver = false;
+    displayMaze();
+    var offsetX = 0; var offsetY = 0;
+    animate();
+
+
+    function printItems(){
+      console.log("items length");
+      for(var i=0; i<state.maze.length; i++){
+        for(var j=0; j<state.maze[0].length; j++){
+          if(state.maze[i][j].items.length>0)
+          if(state.maze[i][j].items[0] instanceof Item)
+          console.log(state.maze[i][j].items.length);
+        }
+      }
+    }
+
+  /*  console.log("m "+scene.children[0].id);
+    console.log("m "+scene.children[2].position.x+" "+scene.children[2].position.y+" "+scene.children[2].position.z);
+        console.log("m "+scene.children[3].position.x+" "+scene.children[3].position.y+" "+scene.children[3].position.z);
+        console.log("m "+scene.children[4].position.x+" "+scene.children[4].position.y+" "+scene.children[4].position.z);
+    console.log("m "+scene.children[2].id);
+      console.log("m "+scene.children[3].id);
+          console.log("m "+scene.children[4].id);*/
+    //printScene();
+
+    function printScene(){
+      for(var i=6; i<scene.children.length; i++){
+        console.log("id "+scene.children[i].id+ " i "+(i+8));
+        console.log("i "+(i+8) +" pos "+scene.children[i].position.x+" "+scene.children[i].position.y+" "+
+                      scene.children[i].position.z)
+      }
+    }
+
+    function Item(x, y, type){
+      this.x=x;
+      this.y=y;
+      this.type = type;
+      if(this.type == "H"){
+        this.geometry = new THREE.Mesh(new THREE.SphereGeometry(size*0.3, size*0.3, size*0.3),
+                        new THREE.MeshToonMaterial({color: 0xff0000}));
+      }
+      else if(this.type == "R"){
+        this.geometry = new THREE.Mesh (new THREE.SphereGeometry(size*0.3, size*0.3, size*0.3)),
+                        new THREE.MeshToonMaterial({color: 0x00ff00});
+      }
+      else if(this.type == "B"){
+        this.geometry = new THREE.Mesh (new THREE.SphereGeometry(size*0.3, size*0.3, size*0.3)),
+                        new THREE.MeshToonMaterial({color: 0x000000});
+      }
+      else if(this.type == "S"){
+        this.geometry = new THREE.Mesh (new THREE.SphereGeometry(size*0.3, size*0.3, size*0.3)),
+                        new THREE.MeshToonMaterial({color: 0x0000ff});
+      }
+
+    }
+
+    function Cell(x, y, size){
+      this.x = x; //x coordinate
+      this.y = y; //y coordinate
+      this.size = size;
+      this.visited = false; //initial cells have not yet been visited
+      this.bombable = false;
+      this.walls = [true, true, true, true]; //top wall, right, bottom, left
+      this.items = [];
+      this.players = []; //players standing on this cell
+      this.parent = null;
+    /*  this.geometry = new THREE.Mesh(new THREE.BoxGeometry(size, size, size),
+  );*/
+    }
+
+    function Neighbor(cell, parent, type){
+      this.cell = cell;
+      this.parent = parent;
+      this.type = type; //is a string that is either "diagonal", "direct", "aligned"
+    }
+
+    function Bomb(player, x, y){
+      this.x=x;
+      this.y=y;
+      this.geometry = new THREE.Mesh(new THREE.SphereGeometry(size*0.4 ,size*0.4, size*0.4),
+                                     new THREE.MeshToonMaterial( {color: 0xffffff}));
+      this.clock = new THREE.Clock();
+      this.player = player;
+    }
+    function Player(x, y){
+      this.x=x;
+      this.y=y;
+      this.cell = maze[Math.round(x/size)][Math.round(y/size)];
+      console.log("this.cell "+this.cell);
+      this.id = 0;
+      this.geometry = new THREE.Mesh( new THREE.SphereGeometry(size*0.5, size*0.5, size*0.5),
+                                      new THREE.MeshToonMaterial( {color: 0xff6666} ) );
+      this.lives = 2;
+      this.bombRange = 1;
+      this.bombs = 1; //number of bombs
+      this.speed = 3;
+      this.inventory = [];
+    }
+
+    function AiPlayer(x, y){
+      Player.call(this, x, y);
+      this.path = [];
+      this.pathInd = 0;
+      this.pathNeedsUpdate = true;
+      this.locNeedsUpdate = true;
+      this.isSafe = true;
+      this.timer = null;
+    }
+
+    function getPlayer(id, players){
+      for(var i= 0; i<players.length; i++){
+        if(players[i].id == id){
+          return players[i];
+        }
+      }
+      return null;
+    }
+
+    //stores info about current state of the game
+    function State(players, maze){
+      this.players = players;
+      this.maze=maze;
+    }
+
+    function initPlayers(){
+      var playerStartX = [2*size, 2*size, (row-3)*size, (row-3)*size]; //p1, p2, p3, p4
+      var playerStartY = [3*size, (col-3)*size, 3*size, (col-3)*size];
+      var me = new Player(playerStartX[0], playerStartY[0]);
+      var id = 10;
+      var players = [];
+      me.id = 1;
+      me.geometry.position.set(me.x-200, me.y-250, -1000);
+      me.geometry.material.color.setHex(0x3399ff);
+      me.geometry.id = id;
+      scene.add(me.geometry);
+      players.push(me);
+      maze[me.x/size][me.y/size].players.splice(0, 0, 1);
+      for(var i=1; i<playerStartX.length; i++){
+        id++;
+        var p = new AiPlayer(playerStartX[i], playerStartY[i]);
+        p.id = (i+1);
+        p.geometry.position.set(playerStartX[i]-200, playerStartY[i]-250, -1000);
+        p.geometry.id = id;
+        scene.add(p.geometry);
+        players.push(p);
+        maze[p.x/size][p.y/size].players.splice(0, 0, (i+1));
+      }
+      return players;
+    }
+
+    function explode(bomb){
+      //var me = getPlayer(1, state.players);
+      var range = bomb.player.bombRange
+      var indexX = Math.round(bomb.x/size);
+      var indexY = Math.round(bomb.y/size);
+      var idx = state.maze[indexX][indexY].items.indexOf(bomb);
+      state.maze[indexX][indexY].items.splice(idx, 1);
+      var stopr = false;
+      var stopl = false;
+      var center = state.maze[indexX][indexY];
+      for(var j=0; j<center.players.length; j++){
+        var p = center.players[j];
+              var pid = getPlayer(p, state.players);
+            //  console.log("pid "+pid.id);
+              if(pid!=null){
+                pid.lives-=1
+                if(pid.lives<=0){
+                  console.log("pid not null "+p);
+                  var pInd = state.players.indexOf(pid);
+                  state.players.splice(pInd, 1);
+                  scene.remove(pid.geometry);
+                  center.players.splice(j, 1);
+                  j--;
+                }
+              }
+      }
+      for(var i = 1; i<=range; i++){
+        if(!stopr){
+          var cxr = state.maze[indexX+i][indexY];
+          var id = (indexX+i)*col+indexY+8+6;
+          if((cxr instanceof Cell) && !cxr.bombable && !cxr.visited){
+          //  console.log(" xr stopped "+cxr.bombable +" "+ (indexX+i)+ " "+ indexY);
+            stopr = true;
+          }
+          else if( !cxr.visited && cxr.bombable){
+            cxr.visited = true;
+            var g = new THREE.BoxGeometry(size, size, 0);
+            var t = new THREE.TextureLoader().load('box.jpg');
+            var m = new THREE.MeshToonMaterial({map: t});
+            var c = new THREE.Mesh(g, m);
+            scene.add(c);
+            scene.remove(scene.getObjectByName("c"+cxr.x/size+" "+cxr.y/size));
+            c.id = id;
+            c.position.set(cxr.x-200, cxr.y-250, -1000);
+          }
+          else if(cxr.players.length>0){
+            console.log("exploded "+(indexX+i)+" "+indexY);
+            for(var j = 0; j < cxr.players.length; j++){
+              var p = cxr.players[j];
+              var pid = getPlayer(p, state.players);
+            //  console.log("pid "+pid.id);
+              if(pid!=null){
+                pid.lives-=1
+                if(pid.lives<=0){
+                  console.log("pid not null "+p);
+                  var pInd = state.players.indexOf(pid);
+                  state.players.splice(pInd, 1);
+                  scene.remove(pid.geometry);
+                  cxr.players.splice(j, 1);
+                  j--;
+                }
+              }
+              }
+              for(var j=0; j<state.players.length; j++ ){
+                console.log("player "+state.players[j].id+" ("+ state.players[j].cell.x/size+" "+
+              state.players[j].cell.y/size+") "+state.players[j].lives);}
+            }
+          }
+      if(!stopl){
+        var cxl = state.maze[indexX-i][indexY];
+         if((cxl instanceof Cell) && !cxl.bombable && !cxl.visited){
+            stopl = true;
+          }
+        else if( !cxl.visited && cxl.bombable){
+          cxl.visited = true;
+          var id = (indexX-i)*col+indexY+8+6;
+          var g = new THREE.BoxGeometry(size, size, 0);
+          var t = new THREE.TextureLoader().load('box.jpg');
+          var m = new THREE.MeshToonMaterial({map: t});
+          var c = new THREE.Mesh(g, m);
+          scene.add(c);
+          scene.remove(scene.getObjectByName("c"+cxl.x/size+" "+cxl.y/size));
+          c.id = id;
+          c.position.set(cxl.x-200, cxl.y-250, -1000);
+        }
+        else if(cxl.players.length>0){
+          console.log("exploded "+(indexX-i)+" "+indexY);
+          for(var j = 0; j < cxl.players.length; j++){
+            var p = cxl.players[j];
+            var pid = getPlayer(p, state.players);
+          //  console.log("pid "+pid.id);
+            if(pid!=null){
+              pid.lives-=1;
+              if(pid.lives<=0){
+                console.log("pid not null "+p);
+                var pInd = state.players.indexOf(pid);
+                state.players.splice(pInd, 1);
+                scene.remove(pid.geometry);
+                cxl.players.splice(j, 1);
+                j--;
+              }
+            }
+            }
+            for(var j=0; j<state.players.length; j++ ){
+              console.log("player "+state.players[j].id+" ("+ state.players[j].cell.x/size+" "+
+              state.players[j].cell.y/size+") "+state.players[j].lives);}
+          }
+        }
+      //  console.log("a explode "+me.lives);
+      }
+      stopl = false;
+      stopr = false;
+      for(var i=1; i<=range; i++){
+        if(!stopl){
+          var cyt = state.maze[indexX][indexY+i];
+          if((cyt instanceof Cell) && !cyt.bombable && !cyt.visited){
+        //    console.log(" yt stopped "+cyt.bombable +" "+ indexX+ " "+ (indexY+i));
+            stopl = true;
+          }
+          else if(!cyt.visited && cyt.bombable){
+            cyt.visited = true;
+            var id = (indexX)*row+(indexY+i)+8+6;
+            scene.remove(scene.getObjectByName("c"+cyt.x/size+" "+cyt.y/size));
+            var g = new THREE.BoxGeometry(size, size, 0);
+            var t = new THREE.TextureLoader().load('box.jpg');
+            var m = new THREE.MeshToonMaterial({map: t});
+            var c = new THREE.Mesh(g, m);
+            c.position.set(cyt.x-200, cyt.y-250, -1000);
+            scene.add(c);
+          }
+          else if(cyt.players.length>0){
+            console.log("exploded "+indexX+" "+(indexY+i));
+            for(var j = 0; j < cyt.players.length; j++){
+              var p = cyt.players[j];
+              var pid = getPlayer(p, state.players);
+            //  console.log("pid "+pid.id);
+              if(pid!=null){
+                pid.lives-=1;
+                if(pid.lives<=0){
+                  console.log("pid not null "+p);
+                  var pInd = state.players.indexOf(pid);
+                  state.players.splice(pInd, 1);
+                  scene.remove(pid.geometry);
+                  cyt.players.splice(j, 1);
+                  j--;
+                }
+              }
+              }
+              for(var j=0; j<state.players.length; j++ ){
+                console.log("player "+state.players[j].id+" ("+ state.players[j].cell.x/size+" "+
+              state.players[j].cell.y/size+") "+state.players[j].lives);}
+            }
+          }
+      if(!stopr){
+        var cyb = state.maze[indexX][indexY-i];
+        if((cyb instanceof Cell) && !cyb.bombable && !cyb.visited ){
+          //console.log(" yb stopped "+cyb.bombable +" "+ indexX+ " "+ (indexY-i));
+          stopr = true;
+        }
+        else if(!cyb.visited && cyb.bombable ){
+          cyb.visited = true;
+          var id = (indexX)*row+(indexY-i)+8+6;
+          scene.remove(scene.getObjectByName("c"+cyb.x/size+" "+cyb.y/size));
+          var g = new THREE.BoxGeometry(size, size, 0);
+          var t = new THREE.TextureLoader().load('box.jpg');
+          var m = new THREE.MeshToonMaterial({map: t});
+          var c = new THREE.Mesh(g, m);
+          c.position.set(cyb.x-200, cyb.y-250, -1000);
+          scene.add(c);
+        }
+        else if(cyb.players.length>0){
+          console.log("exploded "+indexX+" "+(indexY-i));
+          for(var j = 0; j < cyb.players.length; j++){
+            var p = cyb.players[j];
+            var pid = getPlayer(p, state.players);
+          //  console.log("pid "+pid.id);
+            if(pid!=null){
+              pid.lives-=1;
+              if(pid.lives<=0){
+                console.log("pid not null "+p);
+                var pInd = state.players.indexOf(pid);
+                state.players.splice(pInd, 1);
+                scene.remove(pid.geometry);
+                cyb.players.splice(j, 1);
+                j--;
+              }
+            }
+            }
+            for(var j=0; j<state.players.length; j++ ){
+              console.log("player "+state.players[j].id+" ("+ state.players[j].cell.x/size+" "+
+              state.players[j].cell.y/size+") "+state.players[j].lives);}
+          }
+      }
+      }
+}
+    function bomb(){
+      //console.log("total  num bombs "+bombs.length);
+      bombs.forEach(function(b){
+      //  console.log("bomb pos "+Math.round(b.x/size)+" "+Math.round(b.y/size));
+        if(b.clock.getElapsedTime() > 3){
+          console.log("time "+b.clock.getElapsedTime());
+          scene.remove(b.geometry);
+          explode(b);
+          var idx = bombs.indexOf(b);
+          bombs.splice(idx, 1);
+          var curCell = state.maze[Math.round(b.x/size)][Math.round(b.y/size)];
+          var idx1 = curCell.items.indexOf(b);
+          curCell.items.splice(idx1, 1);
+        }
+      });
+    }
+
+    function initState(maze){
+      return new State(players, maze);
+    }
+
+    //helper function for checkL, returns an array of nrighboring cells of the child node.
+    //The length of the returned array is either 3 or 4, depending on what the parent is. 
+    //The order of the neighbors also depend on the parent node. 
+    //assumes that parent.x == child.x or parent.y == child.y
+    function Lhelper(parent, child){
+      var result = [];
+      var x = child.x/size;
+      var y = child.y/size;
+      var top = new Neighbor(maze[x][y+1], parent, "direct");
+      var right = new Neighbor(maze[x+1][y], parent, "direct");
+      var bottom = new Neighbor(maze[x][y-1], parent, "direct");
+      var left = new Neighbor(maze[x-1][y], parent, "direct");
+      if(parent == null){
+        result.push(top, right, bottom, left, top);
+      }
+      else if(parent.x==child.x){
+          left.type = "diagonal";
+          right.type = "diagonal";
+          bottom.type = "aligned";
+          top.type = "aligned";
+        if(parent.y<child.y){
+          result.push(left, right, top);
+        }
+        else{
+          result.push(left, right, bottom);
+        }
+      }
+      else if(parent.y==child.y){
+        top.type = "diagonal";
+        bottom.type="diagonal";
+        right.type = "aligned";
+        left.type = "aligned";
+        if(parent.x<child.x){
+          result.push(top, bottom, right);
+        }
+        else{
+          result.push(top, bottom, left);
+        }
+      }
+      return result;
+    }
+    //checks if there is an L shaped path centered around player's current position
+    //node is either node or of type cell, if it's not null, the returned path will not include
+    //that node
+    function checkL(visited, neighbors, node){
+      //var dy = [0, 1, 0, -1, 0]; var dx = [-1, 0, 1, 0, -1];
+      var nextNeighbors = [];
+      var nextVisited = [];
+      var count = 0;
+      for(var i=0; i<neighbors.length; i++){
+        var next = neighbors[i];
+        var lastNode = next;
+        nextVisited.push(next);
+        if(next.parent!=null){
+          count = 1;
+        }
+        var nodes = Lhelper(next.parent, next);
+       // console.log("current gen "+next.x/size+" "+next.y/size);
+        for(var j=0; j<nodes.length; j++){
+          var n = nodes[j];
+        //  console.log("neighbors "+n.x/size+" "+n.y/size);
+          if(n.cell.visited&&n.cell.items.every(isNotBomb)){
+            if(!visited.includes(n.cell)&&!nextNeighbors.includes(n.cell)){
+              n.cell.parent = next;
+             // lastNode = c;
+           //   if(node==null||(node!=null&&c!=node)){
+                nextNeighbors.push(n.cell);
+            //  }
+            }
+            if((n.type=="direct"||n.type=="diagonal")&&(node==null||(node!=null&&next!=node))){
+              count++;
+            }
+            if(count == 2){
+              return backtrack(n.cell);
+            }
+          }
+          else if(next.parent==null){
+            count = 0;
+          }
+          else if(next.parent!=null){
+            count = 1;
+          }
+        }
+      }
+      if(nextNeighbors.length>0){
+        return checkL(nextVisited, nextNeighbors, node);
+      }
+      else{
+        //return false;
+        //return backtrack(lastNode);
+        return [];
+      }
+    }
+
+    //precondition: maze is already created by calling createMaze before calling initGame
+    function initMaze(maze){
+      count = 0;
+      var id = 500;
+      while(count < 40){
+        var randX = getRandomInt(2, row-2);
+        var randY = getRandomInt(2, col-2);
+        var randItem = getRandomInt(0, 3);
+        var hasItem = getRandomInt(0, 2);
+        var item ;
+        if(!maze[randX][randY].visited && !maze[randX][randY].bombable && maze[randX][randY].items.length==0){
+          maze[randX][randY].bombable = true;
+          if(hasItem > 0){
+            if(randItem == 0){
+              item = new Item(randX*size, randY*size, ItemEnum.HEALTH_PTS);
+              item.geometry.position.set(item.x - 200, item.y - 250, -1000);
+              maze[randX][randY].items.push(item);
+            }
+            else if(randItem == 1){
+              item = new Item(randX*size, randY*size, ItemEnum.BOMB_RANGE);
+              item.geometry.position.set(item.x - 200, item.y - 250, -1000);
+              maze[randX][randY].items.push(item);
+            }
+            else if(randItem == 2){
+              item = new Item(randX*size, randY*size, ItemEnum.NUM_BOMBS);
+              item.geometry.position.set(item.x - 200, item.y - 250, -1000);
+              maze[randX][randY].items.push(item);
+            }
+            else if(randItem == 3){
+              item = new Item(randX*size, randY*size, ItemEnum.SPEED);
+              item.geometry.position.set(item.x - 200, item.y - 250, -1000);
+              maze[randX][randY].items.push(item);
+            }
+              item.geometry.name = "i"+randX+" "+randY;
+              scene.add(item.geometry);
+          }
+          count++;
+        }
+      }
+      var count = 0;
+      while(count < 25){
+        var randX = getRandomInt(2, row-2);
+        var randY = getRandomInt(2, col-2);
+        var randItem = getRandomInt(0, 3);
+        var hasItem = getRandomInt(0, 2);
+        var item;
+        if(maze[randX][randY].visited && maze[randX][randY].items.length==0){
+          maze[randX][randY].visited=false;
+          maze[randX][randY].bombable = true;
+          if(hasItem > 0){
+            if(randItem == 0){
+              item = new Item(randX*size, randY*size, ItemEnum.HEALTH_PTS);
+              item.geometry.position.set(item.x - 200, item.y - 250, -1000);
+              maze[randX][randY].items.push(item);
+            }
+            else if(randItem == 1){
+              item = new Item(randX*size, randY*size, ItemEnum.BOMB_RANGE);
+              item.geometry.position.set(item.x - 200, item.y - 250, -1000);
+              maze[randX][randY].items.push(item);
+            }
+            else if(randItem == 2){
+              item = new Item(randX*size, randY*size, ItemEnum.NUM_BOMBS);
+              item.geometry.position.set(item.x - 200, item.y - 250, -1000);
+              maze[randX][randY].items.push(item);
+            }
+            else if(randItem == 3){
+              item = new Item(randX*size, randY*size, ItemEnum.SPEED);
+              item.geometry.position.set(item.x - 200, item.y - 250, -1000);
+              maze[randX][randY].items.push(item);
+            }
+              item.geometry.name = "i"+randX+" "+randY;
+              scene.add(item.geometry);
+          }
+          count++;
+        }
+      }
+      for(var i=0; i<players.length; i++){
+        var x = players[i].x/size;
+        var y = players[i].y/size;
+        maze[x][y].visited = true;
+        maze[x][y].bombable = true;
+        maze[x][y].parent = null;
+        if(maze[x][y].items.length>0){
+          maze[x][y].items = [];
+          scene.remove(scene.getObjectByName("i"+x+" "+y));
+        }
+        var Lpath = checkL([], [maze[x][y]], null);
+        if(Lpath.length>0){
+          console.log("Lpath true");
+        Lpath.forEach(function(e){
+          console.log(e.x/size+" "+e.y/size);
+        });
+      }
+        if(Lpath.length==0){
+          console.log("false "+x+" "+y);
+          maze[x-1][y].visited=true;
+          maze[x-1][y].bombable = true;
+          if(maze[x-1][y].items.length>0){
+            var obj = scene.getObjectByName("i"+(x-1)+" "+y);
+            scene.remove(obj);
+            maze[x-1][y].items = [];
+          }
+          maze[x][y+1].visited=true;
+          maze[x][y+1].bombable = true;
+          if(maze[x][y+1].items.length>0){
+            var obj = scene.getObjectByName("i"+x+" "+(y+1));
+            scene.remove(obj);
+            maze[x][y+1].items = [];
+          }
+        }
+      }
+      return maze;
+    }
+
+    //initializes maze with a grid of cells, each cell containing four walls.
+    function initGrid(){
+      var grid = [];
+      for(var i = 0; i<row; i++){
+        grid[i]=[];
+        for(var j = 0; j < col; j++){
+          var newCell = new Cell(i*size, j*size, size);
+          grid[i][j]=(newCell);
+        }
+      }
+      return grid;
+    }
+
+    function getItem(player, item){
+      if(item.type == "H"){
+        console.log("lives increased");
+        player.lives+=1;
+      }
+      else if(item.type == "R"){
+        console.log("bomb range increased");
+        player.bombRange+=1;
+      }
+      else if(item.type == "B"){
+        console.log("bombs increased");
+        player.bombs+=1;
+      }
+      else if(item.type == "S"){
+        console.log("speed increased");
+        player.speed+=0.5;
+      }
+    }
+
+    function displayMaze(){
+      //var recent = state.maze[state.players[0].x/size][state.players[0].y/size];
+      window.addEventListener('keydown', function(event, st){
+        var key = event.which;
+        var me = getPlayer(1, state.players);
+        console.log("meeee "+me);
+        if(key == 38){  //up
+          move(me, 'up');
+        }
+        else if(key == 39){ //right
+          move(me, 'right');
+         //aiMove();
+        }
+        else if(key == 40){ //down
+          move(me, 'down');
+        }
+        else if(key == 37){ //left
+          move(me, 'left');
+        }
+        else if(key == 32){ //spacebar
+          move(me, 'spacebar');
+        }
+      })
+      var id = 14;
+      for(var i = 0; i<state.maze.length; i++){
+        for(var j = 0; j<state.maze[0].length; j++){
+          if(!state.maze[i][j].visited){
+            if(state.maze[i][j].bombable){
+              var geometry = new THREE.BoxGeometry(size, size, size);
+              var texture = new THREE.TextureLoader().load('box1.png');
+              var material = new THREE.MeshToonMaterial( {map: texture} );
+              var c = new THREE.Mesh( geometry, material );
+              c.name = "c"+i+" "+j;
+              c.position.set(state.maze[i][j].x-200, state.maze[i][j].y-250, -1000);
+              scene.add(c);
+            }
+            else{
+              var geometry = new THREE.BoxGeometry(size, size, size);
+              var texture = new THREE.TextureLoader().load('brick.jpg');
+              var material = new THREE.MeshToonMaterial( {map: texture} );
+              var c = new THREE.Mesh( geometry, material );
+              c.name = "c"+i+" "+j;
+              c.position.set(state.maze[i][j].x-200, state.maze[i][j].y-250, -1000);
+              scene.add(c);
+            }
+        }
+        else{
+          var g = new THREE.BoxGeometry(size, size, 0);
+          var t = new THREE.TextureLoader().load('box.jpg');
+          var material = new THREE.MeshToonMaterial( {map: t});
+          var c = new THREE.Mesh(g, material);
+          c.name = "c"+i+" "+j;
+          c.position.set(state.maze[i][j].x-200, state.maze[i][j].y-250, -1000);
+          scene.add(c);
+        }
+        }
+      }
+      }
+
+    function move(player, key){
+      if(player!=null){
+      var recent = player.cell;
+      var nextX; var nextY; var next;
+      switch(key){
+        case 'up':
+            nextX = player.x;
+            nextY = player.y+player.speed;
+            var x = Math.round(nextX/size);
+            var y = Math.round(nextY/size);
+          //  console.log("move x "+x+" move y "+y);
+            next = state.maze[x][y];
+            if(next.visited){
+              if(next!=recent){
+                var recentIdx = recent.players.indexOf(player.id);
+                recent.players.splice(recentIdx, 1);
+                next.players.splice(0, 0, player.id);
+                for(var j = 0; j<next.items.length; j++){
+                  if (next.items[j] instanceof Item){
+                    var item = next.items[j];
+                     getItem(player, item);
+                     scene.remove(item.geometry);
+                     next.items.splice(j, 1);
+                     j--;
+                  }
+              }
+                player.cell = next;
+              }
+              player.x = nextX;
+              player.y = nextY;
+              player.geometry.position.set(player.x-200, player.y-250, -1000);
+
+              offsetY = 0.5;
+            }
+        break;
+
+        case 'right':
+        nextX = player.x+player.speed;
+        nextY = player.y;
+        var x = Math.round(nextX/size);
+        var y = Math.round(nextY/size);
+      //  console.log("move x "+x+" move y "+y);
+        next = state.maze[x][y];
+      //  var nextIdx = state.maze[x][y].players.indexOf(1);
+        if(next.visited){
+          if(next!=recent){
+            var recentIdx = recent.players.indexOf(player.id);
+            recent.players.splice(recentIdx, 1);
+            next.players.splice(0, 0, player.id);
+            player.cell = next;
+
+            for(var j = 0; j<next.items.length; j++){
+              if (next.items[j] instanceof Item){
+                var item = next.items[j];
+          //      console.log("getting item");
+                 getItem(player, item);
+                 scene.remove(item.geometry);
+                 next.items.splice(j, 1);
+                 j--;
+              }
+          }
+          }
+          player.x = nextX;
+          player.y = nextY;
+          player.geometry.position.set(player.x-200, player.y-250, -1000);
+        }
+        break;
+
+        case 'down':
+        nextX = player.x;
+        nextY = player.y-player.speed;
+        var x = Math.round(nextX/size);
+        var y = Math.round(nextY/size);
+      //  console.log("move x "+x+" move y "+y);
+        next = state.maze[x][y];
+        if(next.visited){
+          if(next!=recent){
+            var recentIdx = recent.players.indexOf(player.id);
+            recent.players.splice(recentIdx, 1);
+            next.players.splice(0, 0, player.id);
+            for(var j = 0; j<next.items.length; j++){
+          //    console.log("loopingggg");
+              if (next.items[j] instanceof Item){
+                var item = next.items[j];
+        //        console.log("getting item");
+                 getItem(player, item);
+                 scene.remove(item.geometry);
+                 next.items.splice(j, 1);
+                 j--;
+              }
+          }
+            player.cell = next;
+          }
+          player.x = nextX;
+          player.y = nextY;
+          player.geometry.position.set(player.x-200, player.y-250, -1000);
+        }
+        break;
+        case 'left':
+        nextX = player.x-player.speed;
+        nextY = player.y;
+        var x = Math.round(nextX/size);
+        var y = Math.round(nextY/size);
+    //    console.log("move x "+x+" move y "+y);
+        var next = state.maze[x][y];
+    //    var nextIdx = state.maze[x][y].players.indexOf(1);
+        if(next.visited){
+          if(next!=recent){
+            var recentIdx = recent.players.indexOf(player.id);
+            recent.players.splice(recentIdx, 1);
+            next.players.splice(0, 0, player.id);
+            for(var j = 0; j<next.items.length; j++){
+            //  console.log("loopingggg");
+              if (next.items[j] instanceof Item){
+                var item = next.items[j];
+              //  console.log("getting item");
+                 getItem(player, item);
+                 scene.remove(item.geometry);
+                 next.items.splice(j, 1);
+                 j--;
+              }
+          }
+            player.cell = next;
+          }
+          player.x = nextX;
+          player.y = nextY;
+          player.geometry.position.set(player.x-200, player.y-250, -1000);
+        }
+        break;
+        case 'spacebar':
+            var bomb = new Bomb(player, player.x, player.y);
+            bomb.geometry.position.set(player.x-200, player.y-250, -1000);
+            state.maze[Math.round(player.x/size)][Math.round(player.y/size)].items.push(bomb);
+            bombs.push(bomb);
+            scene.add(bomb.geometry);
+            break;
+      }
+    }
+    }
+
+    function printMatrix(){
+      var out = [];
+      for(var i=0; i<grid.length; i++){
+        out[i]=[];
+        for(var j=0; j<grid[i].length; j++){
+          if(grid[i][j].visited){
+          //console.log(0+" ");
+          out.push(0);
+          }
+          else{
+          out.push(1);
+          }
+        }
+    }
+
+    for(var i =0; i<out.length; i++){
+      console.log(out);
+    }
+  }
+
+    function isNeighbor(cell1, cell2){
+      var a = cell1.x/size; var b = cell1.y/size;
+      var c = cell2.x/size; var d = cell2.y/size;
+      if((a==c+2&&b==d)||(a==c-2&&b==d)||(b==d+2&&a==c)||(b==d-2&&a==c)){
+        return true;
+      }
+      return false;
+    }
+
+    function removeWalls(cell){
+      if(visited.length > 0){
+        for(var i = visited.length-1; i>=0; i--){
+          if(isNeighbor(cell, visited[i])){
+          //  console.log("found neighbor");
+            var thisX = cell.x/size;
+            var thisY = cell.y/size;
+            var neighborX = visited[i].x/size;
+            var neighborY = visited[i].y/size;
+            if(thisY==neighborY){
+              //top neighbor
+              if(thisX==neighborX+2){
+                cell.walls[0]=false;
+                grid[thisX-1][thisY].visited=true;
+                grid[thisX-1][thisY].bombable = true;
+                grid[thisX-1][thisY].walls[0]=false;
+                grid[thisX-1][thisY].walls[2]=false;
+                visited[i].walls[2]=false;
+              //  console.log("removed top");
+                break;
+              }
+              //bottom neighbor
+              else{
+                cell.walls[2]=false;
+                grid[thisX+1][thisY].visited=true;
+                grid[thisX+1][thisY].bombombable=true;
+                visited[i].walls[0]=false;
+                grid[thisX+1][thisY].walls[0]=false;
+                grid[thisX+1][thisY].walls[2]=false;
+          //      console.log("removed bottom");
+                break;
+              }
+            }
+            else{
+              if(thisY==neighborY-2){
+                cell.walls[1]=false;
+                grid[thisX][thisY+1].visited=true;
+                grid[thisX][thisY+1].bombable = true;
+                grid[thisX][thisY+1].walls[3]=false;
+                grid[thisX][thisY+1].walls[1]=false;
+                visited[i].walls[3]=false;
+            //    console.log("removed right");
+                break;
+              }
+              else{
+                cell.walls[3]=false;
+                grid[thisX][thisY-1].visited=true;
+                grid[thisX][thisY-1].bombable = true;
+                grid[thisX][thisY-1].walls[1]=false;
+                grid[thisX][thisY-1].walls[3]=false;
+                visited[i].walls[1]=false;
+          //      console.log("removed left");
+                break;
+              }
+            }
+              break;
+          }
+        }
+      }
+    }
+
+
+    function createMaze(){
+      var current = grid[startX][startY];
+      var rand = 0;
+      current.visited = true;
+      current.bombable = true;
+      neighbors.push(current);
+
+      //check if neighbors have already been visited, if not, add it to neighbors and tag it
+      while(neighbors.length>0){
+        var gridX = current.x/size;
+        var gridY = current.y/size;
+        if(gridY > 2){
+          if(!(grid[gridX][gridY-2].visited)){
+            grid[gridX][gridY-2].visited = true;
+            grid[gridX][gridY-2].bombable = true;
+            neighbors.push(grid[gridX][gridY-2]);
+          }
+        }
+        if(gridX<grid.length-3){
+          if(!(grid[gridX+2][gridY].visited)){
+            grid[gridX+2][gridY].visited = true;
+            grid[gridX+2][gridY].bombable = true;
+            neighbors.push(grid[gridX+2][gridY]);
+          }
+        }
+        if(gridY<grid[0].length-3){
+          if(!(grid[gridX][gridY+2].visited)){
+            grid[gridX][gridY+2].visited = true;
+            grid[gridX][gridY+2].bombable = true;
+            neighbors.push(grid[gridX][gridY+2]);
+
+          }
+        }
+        if(gridX>2){
+          if(!(grid[gridX-2][gridY].visited)){
+            grid[gridX-2][gridY].visited = true;
+            grid[gridX-2][gridY].bombable = true;
+            neighbors.push(grid[gridX-2][gridY]);
+
+          }
+        }
+        removeWalls(current);
+        neighbors.splice(rand, 1);
+        visited.push(current);
+        var numUnvisited = neighbors.length;
+        var rand = getRandomInt(0, numUnvisited-1);
+        current = neighbors[rand];
+    }
+    return grid;
+    }
+
+    function Tree(value, children){
+      this.value = value;
+      this.children=[];
+      for(var i=0; i<children.length; i++){
+        this.children[i] = new Tree(children[i].value, []);
+      }
+    }
+
+    function printPath(path){
+      for(var i=0; i<path.length; i++){
+        console.log("["+path[i].x/size+" , "+path[i].y/size+"]");
+      }
+    }
+
+    function isNotBomb(item){
+      return !(item instanceof Bomb);
+    }
+
+    //displays winning information
+    function win(){
+      if(getPlayer(1, state.players)==null || (getPlayer(1, state.players)!=null&&state.players.length==1)){
+        gameOver = true; 
+       // alert("You lost!");
+      }
+    }
+
+    function backtrack(node){
+      var path = [];
+      while(node!=null){
+        path.splice(0, 0, node);
+        node = node.parent;
+      }
+      return path;
+    }
+
+    //returns the shortest path to any target using bfs
+    function shortestPath(player, visitedSet, neighbors){
+      var maze = state.maze;
+      var dy = [0, 1, 0, -1]; var dx = [-1, 0, 1, 0];
+      var nextNeighbors = [];
+      var nextVisited = [];
+      for(var i=0; i<neighbors.length; i++){
+        var current = state.maze[neighbors[i].x/size][neighbors[i].y/size];
+        nextVisited.push(current);
+        if((current.visited&&current.items.length>0&&current.items.every(isNotBomb))){
+          console.log("path items ");
+          return backtrack(current);
+        }
+         else if((current.players.length>0&&current.x!=player.x&&current.y!=player.y)){
+          console.log("path players ");
+          return backtrack(current);
+        }
+        else if(!current.visited && current.bombable){
+          return backtrack(current);
+        }
+        else if(current.visited){
+          for(var j=0; j<dy.length; j++){
+            var next = maze[current.x/size+dx[j]][current.y/size+dy[j]]
+            if(!nextNeighbors.includes(next)&&!visitedSet.includes(next)){
+              next.parent = current;
+              nextNeighbors.push(next);
+            }
+          }
+        }
+      }
+      if(nextNeighbors.length>0)
+      return shortestPath(player, nextVisited, nextNeighbors);
+      else return [];
+    }
+
+    //the next move the AIs will make
+    //ais will try to maximize the items they have and target the human player if the ai
+    //sees it
+
+  function aiMove(){
+    for(var i=0; i<state.players.length; i++){
+      var player = state.players[i];
+      if(player instanceof AiPlayer){
+        if((player.pathNeedsUpdate && player.isSafe) || player.path.length==0){
+          player.cell.parent = null;
+          player.path = shortestPath(player, [], [player.cell]);
+          //console.log("path needs updateeeeee ");
+          player.pathInd = 0;
+          player.pathNeedsUpdate = false;
+        }
+        //printPath(player.path);
+        //the end of the ai's path is path.length -1 if its destination is an item,
+        //or path.length -2 if its destination is an unvisited cell.
+        var end = -2;
+        if(player.path.length>0){
+          var dest = player.path[player.path.length-1];
+          if(dest.visited){
+          //  console.log("dest is visited/contains items");
+            end = -1;
+          }
+        }
+        //console.log("end "+end);
+        //if ai hasn't reached end of its path yet, keep moving it to its destination
+        if(player.pathInd < player.path.length){
+        //  console.log("animating pathhhhhh");
+          animatePath(player, player.path[player.pathInd]);
+        }
+        //console.log("path ind "+player.pathInd);
+        //if current ai has reached the end of its path, then update its path
+        if(player.pathInd == player.path.length+end && player.locNeedsUpdate){
+          //if the dest is an unvisited cell and the player is in a safe position, place a bomb.
+          if((end == -2 && player.isSafe) || (end==-1 && player.cell.players.length>1 && player.isSafe)){
+            move(player, 'spacebar');
+            player.timer = new THREE.Clock();
+            //after it places a bomb at its current pos, ai is no longer safe
+            player.isSafe = false;
+            player.pathNeedsUpdate = false;
+            //tell the ai to go to a safe place
+            player.cell.parent = null;
+            player.path = checkL([], [player.cell], player.cell);
+            //console.log("SEEKING SHELTER ");
+            //printPath(player.path);
+              if(player.path.length>0){
+                  player.pathInd = 0;
+                  player.locNeedsUpdate = false;
+              }
+          }
+          else if(end == -1 && player.isSafe){
+            player.pathNeedsUpdate = true;
+          }
+          else if(!player.isSafe&&player.timer.getElapsedTime()>3){
+            player.pathNeedsUpdate = true;
+            player.isSafe = true;
+            player.timer = null;
+          }
+        }
+
+        if(player.locNeedsUpdate&&player.pathInd < player.path.length+end){
+          player.pathInd++;
+          //console.log("increased path ind "+player.pathInd);
+        }
+      }
+    }
+  }
+
+    //animates the ai moves and sets the ai's locNeedsUpdate variable
+    function animatePath(player, nextLoc){
+      var deltaX = Math.abs(nextLoc.x - player.x);
+      var deltaY = Math.abs(nextLoc.y - player.y);
+      var curX = nextLoc.x/size;
+      var curY = nextLoc.y/size;
+      var curInd = player.pathInd;
+
+        if(player.x==nextLoc.x&&player.y==nextLoc.y){
+        //  console.log("locc needs updateee");
+          player.locNeedsUpdate = true;
+        }
+        //move up
+         else if(deltaX<deltaY&&player.y<nextLoc.y){
+
+            move(player, 'up');
+            if(deltaY<=player.speed){
+          //    console.log("LOCCC needs update");
+              player.y = nextLoc.y;
+              player.x = nextLoc.x;
+              player.geometry.position.set(nextLoc.x-200, nextLoc.y-250, -1000);
+              player.locNeedsUpdate = true; //please give me the next location to move to
+            }
+            else{
+              player.locNeedsUpdate = false;
+            }
+        }
+        //move down
+        else if(deltaX<deltaY&&player.y>nextLoc.y){
+            move(player, 'down');
+            //if(player.y+player.speed<=nextLoc.y){
+            if(deltaY<=player.speed){
+          //    console.log("loc needs update");
+              player.y = nextLoc.y;
+              player.x = nextLoc.x;
+              player.geometry.position.set(nextLoc.x-200, nextLoc.y-250, -1000);
+              player.locNeedsUpdate = true;
+            }
+            else{
+              player.locNeedsUpdate = false;
+            }
+        }
+        //move right
+        else if(deltaY<deltaX&&player.x<nextLoc.x){
+            move(player, 'right');
+            if(deltaX<=player.speed){
+            //  console.log("loc needs update");
+              player.x = nextLoc.x;
+              player.y = nextLoc.y;
+              player.geometry.position.set(nextLoc.x-200, nextLoc.y-250, -1000);
+              player.locNeedsUpdate = true;
+            }
+            else{
+              player.locNeedsUpdate = false;
+            }
+        }
+        //move left
+        else if(deltaY<deltaX&&player.x>nextLoc.x){
+            move(player, 'left');
+            //if(player.x+player.speed<=nextLoc.x){
+            if(deltaX<=player.speed){
+            //  console.log("loc needs update");
+              player.x = nextLoc.x;
+              player.y = nextLoc.y
+              player.geometry.position.set(nextLoc.x-200, nextLoc.y-250, -1000);
+              player.locNeedsUpdate = true;
+            }
+            else{
+              player.locNeedsUpdate = false;
+            }
+        }
+      }
+
+    function getRandomInt(min, max) {
+      min = Math.ceil(min);
+      max = Math.floor(max);
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    // Sets up the scene.
+    function init() {
+      // Create the scene and set the scene size.
+      scene = new THREE.Scene();
+
+      var WIDTH = window.innerWidth,
+          HEIGHT = window.innerHeight;
+
+      // Create a renderer and add it to the DOM.
+      renderer = new THREE.WebGLRenderer({antialias:true});
+      renderer.setSize(WIDTH, HEIGHT);
+      document.body.appendChild(renderer.domElement);
+
+      // Create a camera, zoom it out from the model a bit, and add it to the scene.
+      camera = new THREE.PerspectiveCamera(30, WIDTH / HEIGHT, 0.1, 20000);
+      camera.position.set(30,15,0);
+      scene.add(camera);
+
+      // Create an event listener that resizes the renderer with the browser window.
+      window.addEventListener('resize', function() {
+        var WIDTH = window.innerWidth,
+            HEIGHT = window.innerHeight;
+        renderer.setSize(WIDTH, HEIGHT);
+        camera.aspect = WIDTH / HEIGHT;
+        camera.updateProjectionMatrix();
+      });
+
+      // Set the background color of the scene.
+      renderer.setClearColor(0x000000);
+
+      // Create a light, set its position, and add it to the scene.
+      var light = new THREE.PointLight(0xffffff);
+      light.position.set(-100,200,100);
+      scene.add(light);
+
+    }
+
+
+    // Renders the scene and updates the render as needed.
+    function animate() {
+
+      // Read more about requestAnimationFrame at http://www.paulirish.com/2011/requestanimationframe-for-smart-animating/
+      var animation_id = requestAnimationFrame(animate);
+    //  console.log("players length "+state.players.length);
+      aiMove();
+      win();
+      if(gameOver){
+        var box = document.createElement("div"); 
+        var startOver = document.createElement("BUTTON");
+        var button_text = document.createTextNode("New Game");
+        startOver.appendChild(button_text);
+        var msg = "";
+        if(getPlayer(1, state.players)==null)
+          msg = document.createTextNode("You lost!");
+        else{
+          msg = document.createTextNode("You win!");
+        }
+        box.appendChild(msg);
+        box.appendChild(startOver);
+        document.body.appendChild(box);
+        cancelAnimationFrame(animation_id);
+      }
+      else{
+       // camera.position.set(me.x-200, me.y-250, -100);
+       // camera.lookAt(me.x-200, me.y-250, -5000);
+      }
+      bomb();
+      // Render the scene.
+      renderer.render(scene, camera);
+    }
+
+  </script>
+
+</body>
+</html>
