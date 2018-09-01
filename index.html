@@ -14,54 +14,64 @@
 
     // Set up the scene, camera, and renderer as global variables.
     var scene, camera, renderer;
-    var row = 17;
-    var col = 17;
-    var size = 30;
-    var neighbors=[];
-    var visited=[];
-    var bombs = [];
+    var row;
+    var col;
+    var size;
+    var neighbors;
+    var visited;
+    var bombs;
+    var ItemEnum;
+    var grid;
+    var startX;
+    var startY;
+    var maze;
+    var players;
+    var startMaze;
+    var state;
+    var me;
+    var gameOver;
+    var offsetX;
+    var offsetY;
+    var cam;
+    var headingX;
+    var headingY;
     init();
-    var grid = initGrid();
-    var ItemEnum = {
-      HEALTH_PTS: "H",
-      BOMB_RANGE: "R",
-      NUM_BOMBS: "B",
-      SPEED: "S"
-    };
-    var startX = getRandomInt(1, row-2);  //start seeds for creating the maze
-    if(startX%2==0) startX+=1;
-    var startY = getRandomInt(1, col-2);
-    if(startY%2==0) startY+=1;
-    var maze = createMaze();
-    var players = initPlayers();
-    var startMaze = initMaze(maze);
-    var state = new State(players, startMaze);
-    var me = getPlayer(1, state.players);
-    var gameOver = false;
-    displayMaze();
-    var offsetX = 0; var offsetY = 0;
-    animate();
+    startGame();
 
-
-    function printItems(){
-      console.log("items length");
-      for(var i=0; i<state.maze.length; i++){
-        for(var j=0; j<state.maze[0].length; j++){
-          if(state.maze[i][j].items.length>0)
-          if(state.maze[i][j].items[0] instanceof Item)
-          console.log(state.maze[i][j].items.length);
-        }
+    function startGame(){
+      row = 17; col = 17; size = 30;
+      neighbors = [];
+      visited = [];
+      bombs = [];
+      ItemEnum = {
+        HEALTH_PTS: "H",
+        BOMB_RANGE: "R",
+        NUM_BOMBS: "B",
+        SPEED: "S"
+      };
+      //init();
+      grid = initGrid();
+      startX = getRandomInt(1, row-2);  //start seeds for creating the maze
+      if(startX%2==0) startX+=1;
+      startY = getRandomInt(1, col-2);
+      if(startY%2==0) startY+=1;
+      maze = createMaze();
+      players = initPlayers();
+      for(var i=0; i<players.length; i++){
+        console.log((i+1)+" "+players[i].lives);
       }
+      startMaze = initMaze(maze);
+      state = new State(players, startMaze);
+      me = getPlayer(1, state.players);
+      console.log("me lives "+me.lives);
+      gameOver = false;
+      displayMaze();
+      offsetX = 0;  offsetY = 0;
+      cam = [0, 0, 0];
+      headingX = 0;  headingY = 0;
+      animate();
     }
 
-  /*  console.log("m "+scene.children[0].id);
-    console.log("m "+scene.children[2].position.x+" "+scene.children[2].position.y+" "+scene.children[2].position.z);
-        console.log("m "+scene.children[3].position.x+" "+scene.children[3].position.y+" "+scene.children[3].position.z);
-        console.log("m "+scene.children[4].position.x+" "+scene.children[4].position.y+" "+scene.children[4].position.z);
-    console.log("m "+scene.children[2].id);
-      console.log("m "+scene.children[3].id);
-          console.log("m "+scene.children[4].id);*/
-    //printScene();
 
     function printScene(){
       for(var i=6; i<scene.children.length; i++){
@@ -126,7 +136,7 @@
       this.x=x;
       this.y=y;
       this.cell = maze[Math.round(x/size)][Math.round(y/size)];
-      console.log("this.cell "+this.cell);
+     // console.log("this.cell "+this.cell);
       this.id = 0;
       this.geometry = new THREE.Mesh( new THREE.SphereGeometry(size*0.5, size*0.5, size*0.5),
                                       new THREE.MeshToonMaterial( {color: 0xff6666} ) );
@@ -201,11 +211,9 @@
       for(var j=0; j<center.players.length; j++){
         var p = center.players[j];
               var pid = getPlayer(p, state.players);
-            //  console.log("pid "+pid.id);
               if(pid!=null){
-                pid.lives-=1
+                pid.lives-=1;
                 if(pid.lives<=0){
-                  console.log("pid not null "+p);
                   var pInd = state.players.indexOf(pid);
                   state.players.splice(pInd, 1);
                   scene.remove(pid.geometry);
@@ -231,18 +239,17 @@
             scene.add(c);
             scene.remove(scene.getObjectByName("c"+cxr.x/size+" "+cxr.y/size));
             c.id = id;
-            c.position.set(cxr.x-200, cxr.y-250, -1000);
+            c.position.set(cxr.x-200, cxr.y-250, -1000-size/2);
           }
           else if(cxr.players.length>0){
-            console.log("exploded "+(indexX+i)+" "+indexY);
+            //console.log("exploded "+(indexX+i)+" "+indexY);
             for(var j = 0; j < cxr.players.length; j++){
               var p = cxr.players[j];
               var pid = getPlayer(p, state.players);
-            //  console.log("pid "+pid.id);
               if(pid!=null){
-                pid.lives-=1
+                pid.lives-=1;
                 if(pid.lives<=0){
-                  console.log("pid not null "+p);
+                //  console.log("pid not null "+p);
                   var pInd = state.players.indexOf(pid);
                   state.players.splice(pInd, 1);
                   scene.remove(pid.geometry);
@@ -251,9 +258,6 @@
                 }
               }
               }
-              for(var j=0; j<state.players.length; j++ ){
-                console.log("player "+state.players[j].id+" ("+ state.players[j].cell.x/size+" "+
-              state.players[j].cell.y/size+") "+state.players[j].lives);}
             }
           }
       if(!stopl){
@@ -271,18 +275,20 @@
           scene.add(c);
           scene.remove(scene.getObjectByName("c"+cxl.x/size+" "+cxl.y/size));
           c.id = id;
-          c.position.set(cxl.x-200, cxl.y-250, -1000);
+          c.position.set(cxl.x-200, cxl.y-250, -1000-size/2);
         }
         else if(cxl.players.length>0){
-          console.log("exploded "+(indexX-i)+" "+indexY);
+         // console.log("exploded "+(indexX-i)+" "+indexY);
           for(var j = 0; j < cxl.players.length; j++){
             var p = cxl.players[j];
             var pid = getPlayer(p, state.players);
-          //  console.log("pid "+pid.id);
+            /*console.log("pid "+pid.id+ " line 3 ");
+            console.log("lives before "+pid.lives);*/
             if(pid!=null){
               pid.lives-=1;
+              console.log("lives after "+pid.lives);
               if(pid.lives<=0){
-                console.log("pid not null "+p);
+               // console.log("pid not null "+p);
                 var pInd = state.players.indexOf(pid);
                 state.players.splice(pInd, 1);
                 scene.remove(pid.geometry);
@@ -291,12 +297,8 @@
               }
             }
             }
-            for(var j=0; j<state.players.length; j++ ){
-              console.log("player "+state.players[j].id+" ("+ state.players[j].cell.x/size+" "+
-              state.players[j].cell.y/size+") "+state.players[j].lives);}
           }
         }
-      //  console.log("a explode "+me.lives);
       }
       stopl = false;
       stopr = false;
@@ -315,19 +317,21 @@
             var t = new THREE.TextureLoader().load('box.jpg');
             var m = new THREE.MeshToonMaterial({map: t});
             var c = new THREE.Mesh(g, m);
-            c.position.set(cyt.x-200, cyt.y-250, -1000);
+            c.position.set(cyt.x-200, cyt.y-250, -1000-size/2);
             scene.add(c);
           }
           else if(cyt.players.length>0){
-            console.log("exploded "+indexX+" "+(indexY+i));
+           // console.log("exploded "+indexX+" "+(indexY+i));
             for(var j = 0; j < cyt.players.length; j++){
               var p = cyt.players[j];
               var pid = getPlayer(p, state.players);
-            //  console.log("pid "+pid.id);
+              /*console.log("pid "+pid.id+" line 4");
+              console.log("lives before "+pid.lives);*/
               if(pid!=null){
                 pid.lives-=1;
+                console.log("lives "+pid.lives);
                 if(pid.lives<=0){
-                  console.log("pid not null "+p);
+                 // console.log("pid not null "+p);
                   var pInd = state.players.indexOf(pid);
                   state.players.splice(pInd, 1);
                   scene.remove(pid.geometry);
@@ -336,9 +340,6 @@
                 }
               }
               }
-              for(var j=0; j<state.players.length; j++ ){
-                console.log("player "+state.players[j].id+" ("+ state.players[j].cell.x/size+" "+
-              state.players[j].cell.y/size+") "+state.players[j].lives);}
             }
           }
       if(!stopr){
@@ -355,19 +356,21 @@
           var t = new THREE.TextureLoader().load('box.jpg');
           var m = new THREE.MeshToonMaterial({map: t});
           var c = new THREE.Mesh(g, m);
-          c.position.set(cyb.x-200, cyb.y-250, -1000);
+          c.position.set(cyb.x-200, cyb.y-250, -1000-size/2);
           scene.add(c);
         }
         else if(cyb.players.length>0){
-          console.log("exploded "+indexX+" "+(indexY-i));
+         // console.log("exploded "+indexX+" "+(indexY-i));
           for(var j = 0; j < cyb.players.length; j++){
             var p = cyb.players[j];
             var pid = getPlayer(p, state.players);
-          //  console.log("pid "+pid.id);
+           /* console.log("pid "+pid.id+" line 6");
+            console.log("lives before "+pid.lives);*/
             if(pid!=null){
               pid.lives-=1;
+              console.log("lives after "+pid.lives);
               if(pid.lives<=0){
-                console.log("pid not null "+p);
+              //  console.log("pid not null "+p);
                 var pInd = state.players.indexOf(pid);
                 state.players.splice(pInd, 1);
                 scene.remove(pid.geometry);
@@ -376,26 +379,17 @@
               }
             }
             }
-            for(var j=0; j<state.players.length; j++ ){
-              console.log("player "+state.players[j].id+" ("+ state.players[j].cell.x/size+" "+
-              state.players[j].cell.y/size+") "+state.players[j].lives);}
           }
       }
       }
 }
     function bomb(){
-      //console.log("total  num bombs "+bombs.length);
       bombs.forEach(function(b){
-      //  console.log("bomb pos "+Math.round(b.x/size)+" "+Math.round(b.y/size));
         if(b.clock.getElapsedTime() > 3){
-          console.log("time "+b.clock.getElapsedTime());
           scene.remove(b.geometry);
           explode(b);
           var idx = bombs.indexOf(b);
           bombs.splice(idx, 1);
-          var curCell = state.maze[Math.round(b.x/size)][Math.round(b.y/size)];
-          var idx1 = curCell.items.indexOf(b);
-          curCell.items.splice(idx1, 1);
         }
       });
     }
@@ -586,13 +580,13 @@
         }
         var Lpath = checkL([], [maze[x][y]], null);
         if(Lpath.length>0){
-          console.log("Lpath true");
+         // console.log("Lpath true");
         Lpath.forEach(function(e){
-          console.log(e.x/size+" "+e.y/size);
+        //  console.log(e.x/size+" "+e.y/size);
         });
       }
         if(Lpath.length==0){
-          console.log("false "+x+" "+y);
+         // console.log("false "+x+" "+y);
           maze[x-1][y].visited=true;
           maze[x-1][y].bombable = true;
           if(maze[x-1][y].items.length>0){
@@ -627,35 +621,43 @@
 
     function getItem(player, item){
       if(item.type == "H"){
-        console.log("lives increased");
+      //  console.log("lives increased");
         player.lives+=1;
       }
       else if(item.type == "R"){
-        console.log("bomb range increased");
+      //  console.log("bomb range increased");
         player.bombRange+=1;
       }
       else if(item.type == "B"){
-        console.log("bombs increased");
+      //  console.log("bombs increased");
         player.bombs+=1;
       }
       else if(item.type == "S"){
-        console.log("speed increased");
+      //  console.log("speed increased");
         player.speed+=0.5;
       }
     }
 
-    function displayMaze(){
-      //var recent = state.maze[state.players[0].x/size][state.players[0].y/size];
-      window.addEventListener('keydown', function(event, st){
+    window.addEventListener('mousemove', function(event){
+      headingX+=(event.movementX/(window.innerWidth))*Math.PI*2;
+      headingY-=(event.movementY/(window.innerHeight))*Math.PI;
+      cam[0] = Math.sin(headingX);
+      cam[1] = Math.cos(headingX);
+      cam[2] = Math.cos(headingY);
+    //  console.log("cam 0 "+cam[0]);
+    //  console.log("cam 1 "+cam[1]);
+    //  console.log("cam 2 "+cam[2]);
+    })
+
+ window.addEventListener('keydown', function(event, st){
         var key = event.which;
         var me = getPlayer(1, state.players);
-        console.log("meeee "+me);
+      //  console.log("meeee "+me);
         if(key == 38){  //up
           move(me, 'up');
         }
         else if(key == 39){ //right
           move(me, 'right');
-         //aiMove();
         }
         else if(key == 40){ //down
           move(me, 'down');
@@ -667,6 +669,9 @@
           move(me, 'spacebar');
         }
       })
+
+    function displayMaze(){
+      //var recent = state.maze[state.players[0].x/size][state.players[0].y/size];
       var id = 14;
       for(var i = 0; i<state.maze.length; i++){
         for(var j = 0; j<state.maze[0].length; j++){
@@ -696,7 +701,7 @@
           var material = new THREE.MeshToonMaterial( {map: t});
           var c = new THREE.Mesh(g, material);
           c.name = "c"+i+" "+j;
-          c.position.set(state.maze[i][j].x-200, state.maze[i][j].y-250, -1000);
+          c.position.set(state.maze[i][j].x-200, state.maze[i][j].y-250, -1000-size/2);
           scene.add(c);
         }
         }
@@ -1030,11 +1035,11 @@
         var current = state.maze[neighbors[i].x/size][neighbors[i].y/size];
         nextVisited.push(current);
         if((current.visited&&current.items.length>0&&current.items.every(isNotBomb))){
-          console.log("path items ");
+         // console.log("path items ");
           return backtrack(current);
         }
          else if((current.players.length>0&&current.x!=player.x&&current.y!=player.y)){
-          console.log("path players ");
+        //  console.log("path players ");
           return backtrack(current);
         }
         else if(!current.visited && current.bombable){
@@ -1219,6 +1224,7 @@
 
       // Create a camera, zoom it out from the model a bit, and add it to the scene.
       camera = new THREE.PerspectiveCamera(30, WIDTH / HEIGHT, 0.1, 20000);
+      camera.up.set( 0, 0, 1 );
       camera.position.set(30,15,0);
       scene.add(camera);
 
@@ -1265,10 +1271,21 @@
         box.appendChild(startOver);
         document.body.appendChild(box);
         cancelAnimationFrame(animation_id);
+        box.addEventListener('click', function(){
+          console.log("doc children "+document.children);
+          //clear canvas
+          box.remove();
+          for (let i = scene.children.length - 1; i >= 0; i--) {
+              if(scene.children[i].type === "Mesh")
+                  scene.remove(scene.children[i]);
+          }
+          startGame();
+         // gameOver = false;
+        })
       }
       else{
-       // camera.position.set(me.x-200, me.y-250, -100);
-       // camera.lookAt(me.x-200, me.y-250, -5000);
+         // camera.position.set(me.x-200, me.y-250, -1000+25);
+         // camera.lookAt(me.x-200+cam[0], me.y-250+cam[1], -1000+cam[2]+25);
       }
       bomb();
       // Render the scene.
