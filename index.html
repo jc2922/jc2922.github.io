@@ -6,7 +6,10 @@
   <link rel="stylesheet" href="game.css">
 </head>
 <body style="margin: 0;">
-
+  <div class="playerInfo"></div>
+  <div class="playerInfo"></div>
+  <div class="playerInfo"></div>
+  <div class="playerInfo"></div>
   <!--<script src="three.js-master/build/three.min.js"></script>-->
   <script src="http://threejs.org/build/three.min.js"></script>
 
@@ -1096,8 +1099,18 @@
         //console.log("end "+end);
         //if ai hasn't reached end of its path yet, keep moving it to its destination
         if(player.pathInd < player.path.length){
-        //  console.log("animating pathhhhhh");
-          animatePath(player, player.path[player.pathInd]);
+          if(player.pathInd < player.path.length-1){
+            if(player.path[player.pathInd+1].items.every(isNotBomb))
+              animatePath(player, player.path[player.pathInd]);
+            else{
+              player.cell.parent = null;
+              player.pathNeedsUpdate = true;
+              player.pathInd = 0;
+            }
+          }
+          else{
+            animatePath(player, player.path[player.pathInd]);
+          }
         }
         //console.log("path ind "+player.pathInd);
         //if current ai has reached the end of its path, then update its path
@@ -1282,6 +1295,7 @@
       win();
       if(gameOver){
         var box = document.createElement("div"); 
+        box.setAttribute('id', 'restart');
         var startOver = document.createElement("BUTTON");
         var button_text = document.createTextNode("New Game");
         startOver.appendChild(button_text);
