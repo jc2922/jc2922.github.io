@@ -721,7 +721,7 @@
           //  console.log("move x "+x+" move y "+y);
             next = state.maze[x][y];
             if(next.visited){
-              if(next!=recent){
+              if(next!=recent && next.items.every(isNotBomb)){
                 var recentIdx = recent.players.indexOf(player.id);
                 recent.players.splice(recentIdx, 1);
                 next.players.splice(0, 0, player.id);
@@ -736,9 +736,11 @@
               }
                 player.cell = next;
               }
-              player.x = nextX;
-              player.y = nextY;
-              player.geometry.position.set(player.x-200, player.y-250, -1000);
+              if(next == recent || (next!=recent && next.items.every(isNotBomb))){
+                player.x = nextX;
+                player.y = nextY;
+                player.geometry.position.set(player.x-200, player.y-250, -1000);
+              }
 
               offsetY = 0.5;
             }
@@ -753,7 +755,7 @@
         next = state.maze[x][y];
       //  var nextIdx = state.maze[x][y].players.indexOf(1);
         if(next.visited){
-          if(next!=recent){
+          if(next!=recent && next.items.every(isNotBomb)){
             var recentIdx = recent.players.indexOf(player.id);
             recent.players.splice(recentIdx, 1);
             next.players.splice(0, 0, player.id);
@@ -770,9 +772,11 @@
               }
           }
           }
-          player.x = nextX;
-          player.y = nextY;
-          player.geometry.position.set(player.x-200, player.y-250, -1000);
+          if(next == recent || (next!=recent && next.items.every(isNotBomb))){
+            player.x = nextX;
+            player.y = nextY;
+            player.geometry.position.set(player.x-200, player.y-250, -1000);
+          }
         }
         break;
 
@@ -784,7 +788,7 @@
       //  console.log("move x "+x+" move y "+y);
         next = state.maze[x][y];
         if(next.visited){
-          if(next!=recent){
+          if(next!=recent && next.items.every(isNotBomb)){
             var recentIdx = recent.players.indexOf(player.id);
             recent.players.splice(recentIdx, 1);
             next.players.splice(0, 0, player.id);
@@ -801,9 +805,11 @@
           }
             player.cell = next;
           }
-          player.x = nextX;
-          player.y = nextY;
-          player.geometry.position.set(player.x-200, player.y-250, -1000);
+          if(next == recent || (next!=recent && next.items.every(isNotBomb))){
+            player.x = nextX;
+            player.y = nextY;
+            player.geometry.position.set(player.x-200, player.y-250, -1000);
+          }
         }
         break;
         case 'left':
@@ -815,7 +821,7 @@
         var next = state.maze[x][y];
     //    var nextIdx = state.maze[x][y].players.indexOf(1);
         if(next.visited){
-          if(next!=recent){
+          if(next!=recent && next.items.every(isNotBomb)){
             var recentIdx = recent.players.indexOf(player.id);
             recent.players.splice(recentIdx, 1);
             next.players.splice(0, 0, player.id);
@@ -832,9 +838,11 @@
           }
             player.cell = next;
           }
-          player.x = nextX;
-          player.y = nextY;
-          player.geometry.position.set(player.x-200, player.y-250, -1000);
+          if(next == recent || (next!=recent && next.items.every(isNotBomb))){
+            player.x = nextX;
+            player.y = nextY;
+            player.geometry.position.set(player.x-200, player.y-250, -1000);
+          }
         }
         break;
         case 'spacebar':
@@ -1032,14 +1040,13 @@
       var nextNeighbors = [];
       var nextVisited = [];
       for(var i=0; i<neighbors.length; i++){
-        var current = state.maze[neighbors[i].x/size][neighbors[i].y/size];
+        var current = state.maze[Math.round(neighbors[i].x/size)][Math.round(neighbors[i].y/size)];
         nextVisited.push(current);
         if((current.visited&&current.items.length>0&&current.items.every(isNotBomb))){
          // console.log("path items ");
           return backtrack(current);
         }
-         else if((current.players.length>0&&current.x!=player.x&&current.y!=player.y)){
-        //  console.log("path players ");
+         else if((current.players.length>0&&(current.x!=Math.round(player.x)||current.y!=Math.round(player.y)))){
           return backtrack(current);
         }
         else if(!current.visited && current.bombable){
@@ -1068,7 +1075,7 @@
     for(var i=0; i<state.players.length; i++){
       var player = state.players[i];
       if(player instanceof AiPlayer){
-        if((player.pathNeedsUpdate && player.isSafe) || player.path.length==0){
+        if((player.pathNeedsUpdate) || player.path.length==0){
           player.cell.parent = null;
           player.path = shortestPath(player, [], [player.cell]);
           //console.log("path needs updateeeeee ");
@@ -1114,6 +1121,23 @@
           }
           else if(end == -1 && player.isSafe){
             player.pathNeedsUpdate = true;
+          }
+          else if(!player.isSafe && end == -1 &&!player.cell.items.every(isNotBomb)){
+            console.log("player " +player.id +" not safeeee!!");
+            player.cell.parent = null;
+            player.path = checkL([], [player.cell], player.cell);
+            if(player.path.length>0){
+              console.log("running away ");
+              printPath(player.path);
+              player.pathInd = 0;
+              player.locNeedsUpdate = false;
+              player.pathNeedsUpdate = false;
+            }
+            else{
+              console.log("")
+              player.pathInd = 0;
+              player.pathNeedsUpdate = true;
+            }
           }
           else if(!player.isSafe&&player.timer.getElapsedTime()>3){
             player.pathNeedsUpdate = true;
